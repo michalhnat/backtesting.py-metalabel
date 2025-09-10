@@ -1,3 +1,18 @@
+[project]
+name = "backtesting_meta-labeling"
+version = "0.1.0"
+description = "backtesting_meta-labeling"
+authors = [{ name = "Michal Hnatusko", email = "mi.hnatusko@gmail.com" }]
+dependencies = [
+    "bokeh>=3.7.3",
+    "joblib>=1.5.1",
+    "numpy>=2.3.2",
+    "pandas>=2.3.1",
+    "scikit-learn>=1.7.1",
+    "xgboost>=3.0.4",
+]
+
+
 [tool.ruff]
 exclude = [
     '.git',

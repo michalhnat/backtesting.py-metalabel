@@ -1,42 +1,39 @@
-[![](https://i.imgur.com/E8Kj69Y.png)](https://kernc.github.io/backtesting.py/)
+# Backtesting.py - metalabeling
 
-Backtesting.py
-==============
-[![Build Status](https://img.shields.io/github/actions/workflow/status/kernc/backtesting.py/ci.yml?branch=master&style=for-the-badge)](https://github.com/kernc/backtesting.py/actions)
-[![Code Coverage](https://img.shields.io/codecov/c/gh/kernc/backtesting.py.svg?style=for-the-badge&label=Covr)](https://codecov.io/gh/kernc/backtesting.py)
-[![Source lines of code](https://img.shields.io/endpoint?url=https%3A%2F%2Fghloc.vercel.app%2Fapi%2Fkernc%2Fbacktesting.py%2Fbadge?filter=.py%26format=human&style=for-the-badge&label=SLOC&color=green)](https://ghloc.vercel.app/kernc/backtesting.py)
-[![Backtesting on PyPI](https://img.shields.io/pypi/v/backtesting.svg?color=blue&style=for-the-badge)](https://pypi.org/project/backtesting)
-[![PyPI downloads](https://img.shields.io/pypi/dd/backtesting.svg?style=for-the-badge&label=D/L&color=skyblue)](https://pypistats.org/packages/backtesting)
-[![Total downloads](https://img.shields.io/pepy/dt/backtesting?style=for-the-badge&label=%E2%88%91&color=skyblue)](https://pypistats.org/packages/backtesting)
-[![GitHub Sponsors](https://img.shields.io/github/sponsors/kernc?color=pink&style=for-the-badge&label=%E2%99%A5)](https://github.com/sponsors/kernc)
+This fork intruduces simple implemention of [**meta-labeling**](https://en.wikipedia.org/wiki/Meta-Labeling) module build on top of [**Backtesting.py**](https://github.com/kernc/backtesting.py) library. 
 
-Backtest trading strategies with Python.
-
-[**Project website**](https://kernc.github.io/backtesting.py) + [Documentation] &nbsp;&nbsp;|&nbsp; [YouTube]
-
-[Documentation]: https://kernc.github.io/backtesting.py/doc/backtesting/
-[YouTube]: https://www.youtube.com/results?q=%22backtesting.py%22
-
-Installation
-------------
-
-    $ pip install backtesting
+The module integrates with Backtesting.py, allowing users to easily add meta-labeling to their existing strategies. It supports various machine learning models and provides utilities for feature engineering and signal filtering.
 
 
-Usage
------
-```python
-from backtesting import Backtest, Strategy
-from backtesting.lib import crossover
+**Key features:**
 
-from backtesting.test import SMA, GOOG
+- Easy integration with Backtesting.py strategies
 
+- Support for multiple classifier models
+
+- Ensemble model builder
+
+
+## Usage
+
+```sh
+
+# clone this repo
+
+cd backtesting.py-metalabel
+uv sync
+
+uv run python showcase.py
+```
+
+```py
+#ASSET = GOOG
 
 class SmaCross(Strategy):
     def init(self):
         price = self.data.Close
-        self.ma1 = self.I(SMA, price, 10)
-        self.ma2 = self.I(SMA, price, 20)
+        self.ma1 = self.I(SMA, price, 5)
+        self.ma2 = self.I(SMA, price, 9)
 
     def next(self):
         if crossover(self.ma1, self.ma2):
@@ -45,81 +42,83 @@ class SmaCross(Strategy):
             self.sell()
 
 
-bt = Backtest(GOOG, SmaCross, commission=.002,
-              exclusive_orders=True)
-stats = bt.run()
-bt.plot()
+split_idx = int(len(ASSET) * 0.8)
+train_data = ASSET.iloc[:split_idx].copy()
+test_data = ASSET.iloc[split_idx:].copy()
+
+rf_parms = {
+    'n_estimators': 10000,
+    'max_depth': 15,
+    'random_state': 223145
+}
+
+xgb_params = {
+    "n_estimators": 700,
+    "learning_rate": 0.05,
+}
+
+ensemble = (
+    EnsembleBuilder()
+    .add_model("rf", RandomForrestModel(**rf_parms), weight=0.7)
+    .add_model("xg", XGBClassifier(**xgb_params), weight=0.3)
+    .soft_voting()
+    .build()
+)
+
+model = ensemble 
+
+
+curr_strat = SmaCross
+
+ml = MetaLabeler(strategy=curr_strat, model=model, window_size=100,
+                 data=train_data, commission=.002, exclusive_orders=True,
+                 finalize_trades=True, cash=1_000_000)
+
+gate = ml.create_filter(curr_strat, window_size=100, threshold=0.7, runtime_data=test_data)
+
+enhanced_strategy = make_enhanced_strategy(curr_strat, gate)
+
+bt = Backtest(test_data, enhanced_strategy, cash=1_000_000,
+               commission=.002, exclusive_orders=True, finalize_trades=True)
 ```
+Full script can be found in [showcase.py](./showcase.py).
 
-Results in:
+## Results
 
-```text
-Start                     2004-08-19 00:00:00
-End                       2013-03-01 00:00:00
-Duration                   3116 days 00:00:00
-Exposure Time [%]                       94.27
-Equity Final [$]                     68935.12
-Equity Peak [$]                      68991.22
-Return [%]                             589.35
-Buy & Hold Return [%]                  703.46
-Return (Ann.) [%]                       25.42
-Volatility (Ann.) [%]                   38.43
-CAGR [%]                                16.80
-Sharpe Ratio                             0.66
-Sortino Ratio                            1.30
-Calmar Ratio                             0.77
-Alpha [%]                              450.62
-Beta                                     0.02
-Max. Drawdown [%]                      -33.08
-Avg. Drawdown [%]                       -5.58
-Max. Drawdown Duration      688 days 00:00:00
-Avg. Drawdown Duration       41 days 00:00:00
-# Trades                                   93
-Win Rate [%]                            53.76
-Best Trade [%]                          57.12
-Worst Trade [%]                        -16.63
-Avg. Trade [%]                           1.96
-Max. Trade Duration         121 days 00:00:00
-Avg. Trade Duration          32 days 00:00:00
-Profit Factor                            2.13
-Expectancy [%]                           6.91
-SQN                                      1.78
-Kelly Criterion                        0.6134
-_strategy              SmaCross(n1=10, n2=20)
-_equity_curve                          Equ...
-_trades                       Size  EntryB...
-dtype: object
-```
-[![plot of trading simulation](https://i.imgur.com/xRFNHfg.png)](https://kernc.github.io/backtesting.py/#example)
+Here is a markdown table comparing the results of the Base Strategy and Enhanced Strategy:
 
-Find more usage examples in the [documentation].
-
-
-Features
---------
-* Simple, well-documented API
-* Blazing fast execution
-* Built-in optimizer
-* Library of composable base strategies and utilities
-* Indicator-library-agnostic
-* Supports _any_ financial instrument with candlestick data
-* Detailed results
-* Interactive visualizations
-
-![xkcd.com/1570](https://imgs.xkcd.com/comics/engineer_syllogism.png)
-
-
-Bugs
-----
-Before reporting bugs or posting to the
-[discussion board](https://github.com/kernc/backtesting.py/discussions),
-please read [contributing guidelines](CONTRIBUTING.md), particularly the section
-about crafting useful bug reports and ```` ``` ````-fencing your code. We thank you!
-
-
-Alternatives
-------------
-See [alternatives.md] for a list of alternative Python
-backtesting frameworks and related packages.
-
-[alternatives.md]: https://github.com/kernc/backtesting.py/blob/master/doc/alternatives.md
+| Metric                   | Base Strategy         | Enhanced Strategy      |
+|--------------------------|----------------------|-----------------------|
+| Start                    | 2011-06-15 00:00:00  | 2011-06-15 00:00:00   |
+| End                      | 2013-03-01 00:00:00  | 2013-03-01 00:00:00   |
+| Duration                 | 625 days 00:00:00    | 625 days 00:00:00     |
+| Exposure Time [%]        | 97.2093              | 97.2093               |
+| Equity Final [$]         | 1,167,385.86         | <span style="color:green">1,631,710.29</span> |
+| Equity Peak [$]          | 1,380,412.05         | 1,653,523.12          |
+| Commissions [$]          | 217,971.24           | <span style="color:green">141,266.02</span> |
+| Return [%]               | 16.74                | <span style="color:green">63.17</span>      |
+| Buy & Hold Return [%]    | 66.98                | 66.98                 |
+| Return (Ann.) [%]        | 9.49                 | 33.24                 |
+| Volatility (Ann.) [%]    | 28.80                | 35.60                 |
+| CAGR [%]                 | 6.44                 | 21.83                 |
+| Sharpe Ratio             | 0.33                 | 0.93                  |
+| Sortino Ratio            | 0.59                 | 1.96                  |
+| Calmar Ratio             | 0.34                 | 1.81                  |
+| Alpha [%]                | 15.82                | 21.85                 |
+| Beta                     | 0.01                 | 0.62                  |
+| Max. Drawdown [%]        | -27.54               | <span style="color:green">-18.41</span>     |
+| Avg. Drawdown [%]        | -8.51                | -4.84                 |
+| Max. Drawdown Duration   | 560 days 00:00:00    | 246 days 00:00:00     |
+| Avg. Drawdown Duration   | 119 days 00:00:00    | 41 days 00:00:00      |
+| # Trades                 | 46                   | <span style="color:green">27</span>           |
+| Win Rate [%]             | 34.78                | <span style="color:green">55.56</span>      |
+| Best Trade [%]           | 23.23                | 17.47                 |
+| Worst Trade [%]          | -6.81                | -6.35                 |
+| Avg. Trade [%]           | 0.34                 | 1.83                  |
+| Max. Trade Duration      | 83 days 00:00:00     | 108 days 00:00:00     |
+| Avg. Trade Duration      | 14 days 00:00:00     | 23 days 00:00:00      |
+| Profit Factor            | 1.32                 | 3.16                  |
+| Expectancy [%]           | 0.48                 | 1.97                  |
+| SQN                      | 0.40                 | 1.90                  |
+| Kelly Criterion          | 0.06                 | 0.37                  |
+| _strategy                | SmaCross             | Enhanced_SmaCross     |
